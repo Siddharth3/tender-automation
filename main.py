@@ -139,7 +139,7 @@ def process_and_filter_tenders(file_bytes: bytes, output_dir: str, min_score: in
 
     print(f"🎯 Qualified Tenders Found (Score >= {min_score}%): {len(filtered_df)} / {len(df)}")
 
-    filtered_file_path = os.path.join(output_dir, f"Chalo_Qualified_Tenders_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx")
+    filtered_file_path = os.path.join(output_dir, f"Chalo_Qualified_Tenders_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv")
     filtered_df.to_excel(filtered_file_path, index=False)
 
     return filtered_file_path
