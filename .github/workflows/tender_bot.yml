@@ -2,8 +2,8 @@ name: Tender Email Bot
 
 on:
   schedule:
-    # Runs daily at 3:00 AM UTC (8:30 AM IST). Adjust cron time if needed.
-    - cron: '0 3 * * *'
+    # Runs daily at 6:00 AM UTC (11:30 AM IST). Adjust cron time if needed.
+    - cron: '0 6 * * *'
   # Enables a "Run workflow" button on GitHub so you can run it manually anytime
   workflow_dispatch:
 
