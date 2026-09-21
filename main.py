@@ -73,7 +73,7 @@ async def run_automation():
         response = await page.request.get(full_download_url)
         file_bytes = await response.body()
         
-        final_file_path = os.path.join(download_dir, "tender_export.xlsx")
+        final_file_path = os.path.join(download_dir, "tender_export.csv")
         with open(final_file_path, "wb") as f:
             f.write(file_bytes)
 
