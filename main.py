@@ -1,5 +1,6 @@
 import os
 import io
+import time
 import json
 import asyncio
 import smtplib
@@ -40,6 +41,30 @@ Core Products & Services:
 Irrelevant Tenders:
 - General civil construction, road works, building construction, catering, security guards, office furniture, standard non-transit software/hardware procurement, any other IT projects with mobile application or website development.
 """
+
+INCLUDE_KEYWORDS = [
+    "bus", "transit", "transport", "ticketing", "afcs", "ncmc", "etim", "etm", "itms", "operation", "maintenance", 
+    "integrated transport management system", "gps", "fleet", "passenger information", "its", "intelligent transport", 
+    "electric bus", "electric buses", "e-bus", "fare collection", "mobility", "depot", "vehicle tracking", "avls",
+    "vtu", "bms", "bus management system", "cms", "contract management system", "digital audit", "pis", "ncmc", 
+    "national common mobility card", "driver based fare collection system", "tap in tap out", "pmu", "contract management", "smart card"
+]
+
+EXCLUDE_KEYWORDS = [
+    "civil", "road", "building construction", "furniture", "security guard", "catering", "drainage", "sewerage", 
+    "bridge", "paint", "cleaning", "stationery", "janitorial", "canteen", "sanitary"
+]
+
+def is_potentially_relevant(row_text: str) -> bool:
+    """Pre-filters tenders using basic keyword logic."""
+    text = row_text.lower()
+    
+    # Check if any excluded keyword is present
+    if any(ex_kw in text for ex_kw in EXCLUDE_KEYWORDS):
+        return False
+        
+    # Check if at least one included domain keyword is present
+    return any(inc_kw in text for inc_kw in INCLUDE_KEYWORDS)
 
 # --- STRUCTURED OUTPUT MODEL ---
 class TenderEvaluation(BaseModel):
@@ -97,63 +122,96 @@ def evaluate_tender_row(client: genai.Client, tender_text: str) -> TenderEvaluat
 
 
 def process_and_filter_tenders(file_bytes: bytes, output_dir: str, min_score: int = 60) -> str:
-    """Parses raw downloaded bytes, applies AI scoring, and saves filtered Excel."""
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         raise ValueError("Missing GEMINI_API_KEY environment variable.")
 
     client = genai.Client(api_key=api_key)
 
-    # 1. Parse TenderDetail file (handles HTML tables, CSVs, and Excel files)
+    # 1. Parse TenderDetail file
     try:
         df = pd.read_excel(io.BytesIO(file_bytes))
     except Exception:
         try:
-            # Handle ASP.NET HTML tables disguised as Excel
             dfs = pd.read_html(io.BytesIO(file_bytes))
             df = dfs[0] if dfs else pd.DataFrame()
         except Exception:
             df = pd.read_csv(io.BytesIO(file_bytes))
 
     if df.empty:
-        print("⚠️ Raw downloaded file was empty or could not be parsed.")
         empty_path = os.path.join(output_dir, f"Empty_Export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx")
         pd.DataFrame({"Status": ["No data found in source file"]}).to_excel(empty_path, index=False)
         return empty_path
 
-    print(f"📊 Successfully loaded {len(df)} raw tenders from export.")
+    print(f"📊 Total Raw Tenders Downloaded: {len(df)}")
 
-    # 2. Score tenders using Gemini
+    # 2. Apply Local Python Keyword Pre-Filtering
+    df["Full_Text"] = df.apply(lambda r: " ".join([str(val) for val in r.values if pd.notna(val)]), axis=1)
+    
+    # Filter rows based on keywords
+    pre_filtered_df = df[df["Full_Text"].apply(is_potentially_relevant)].copy()
+    
+    print(f"🔍 Pre-filtered: {len(pre_filtered_df)} / {len(df)} tenders sent to Gemini AI.")
+
+    # Drop temporary column before evaluation
+    df.drop(columns=["Full_Text"], inplace=True)
+    pre_filtered_df.drop(columns=["Full_Text"], inplace=True)
+
+    # If no tenders survived pre-filtering, return raw list marked with 0 scores
+    if pre_filtered_df.empty:
+        print("⚠️ No tenders matched keyword pre-filtering. Returning unprocessed sheet.")
+        df["AI_Relevance_Score"] = 0
+        df["AI_Is_Relevant"] = False
+        df["AI_Matched_Domain"] = "N/A"
+        df["AI_Reasoning"] = "Filtered out during pre-evaluation keyword check."
+        
+        filtered_file_path = os.path.join(output_dir, f"Chalo_Qualified_Tenders_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx")
+        df.to_excel(filtered_file_path, index=False)
+        return filtered_file_path
+
+    # 3. Evaluate ONLY the pre-filtered tenders via Gemini AI
+    eval_map = {}
+
+    for idx, row in pre_filtered_df.iterrows():
+        tdr = str(row.get("TDR", idx))
+        tender_summary = "\n".join([f"{col}: {val}" for col, val in row.items() if pd.notna(val)])
+        
+        print(f"   🤖 AI Evaluating TDR {tdr} ({len(eval_map) + 1}/{len(pre_filtered_df)})...")
+        
+        # 13-second sleep ensures we strictly respect 5 RPM (free tier limit)
+        time.sleep(13)
+        eval_res = evaluate_tender_row(client, tender_summary)
+        eval_map[tdr] = eval_res
+
+    # 4. Assign evaluation results to DataFrame
     scores, is_relevants, domains, reasons = [], [], [], []
 
     for idx, row in df.iterrows():
-        tender_summary = "\n".join([f"{col}: {val}" for col, val in row.items() if pd.notna(val)])
-        print(f"   Evaluating tender {idx + 1}/{len(df)}...")
-        
-        eval_res = evaluate_tender_row(client, tender_summary)
-        scores.append(eval_res.relevance_score)
-        is_relevants.append(eval_res.is_relevant)
-        domains.append(eval_res.matching_core_domain)
-        reasons.append(eval_res.brief_reason)
+        tdr = str(row.get("TDR", idx))
+        if tdr in eval_map:
+            res = eval_map[tdr]
+            scores.append(res.relevance_score)
+            is_relevants.append(res.is_relevant)
+            domains.append(res.matching_core_domain)
+            reasons.append(res.brief_reason)
+        else:
+            scores.append(0)
+            is_relevants.append(False)
+            domains.append("N/A")
+            reasons.append("Filtered out locally by keyword matching.")
 
-    # Append AI results
     df["AI_Relevance_Score"] = scores
     df["AI_Is_Relevant"] = is_relevants
     df["AI_Matched_Domain"] = domains
     df["AI_Reasoning"] = reasons
 
-    # Sort all tenders by score descending
+    # Sort and filter by score
     df = df.sort_values(by="AI_Relevance_Score", ascending=False)
-
-    # 3. Filter by threshold
     filtered_df = df[df["AI_Relevance_Score"] >= min_score]
 
-    print(f"🎯 Tenders matching score >= {min_score}%: {len(filtered_df)} / {len(df)}")
-
-    # SAFEGUARD: If no tenders cross min_score, return ALL scored tenders so you see what AI evaluated
     if filtered_df.empty:
-        print(f"⚠️ No tenders met score >= {min_score}%. Returning all scored tenders so email is not empty.")
-        filtered_df = df
+        print(f"⚠️ No tenders scored >= {min_score}%. Returning pre-filtered tenders.")
+        filtered_df = df[df["AI_Reasoning"] != "Filtered out locally by keyword matching."]
 
     filtered_file_path = os.path.join(
         output_dir, 
