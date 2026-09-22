@@ -83,7 +83,7 @@ def get_dynamic_download_dir(prefix="tenders"):
 
 
 def evaluate_tender_row(client: genai.Client, tender_text: str) -> TenderEvaluation:
-    """Evaluates individual tender details using Gemini API."""
+    """Evaluates individual tender details with automatic retries for 503/429 errors."""
     prompt = f"""
     You are an expert bid-qualification evaluator for Chalo.
     
@@ -95,30 +95,46 @@ def evaluate_tender_row(client: genai.Client, tender_text: str) -> TenderEvaluat
     {tender_text}
     ---
     """
-    try:
-        # Small delay to respect Gemini API rate limits (15 RPM on free tier)
-        time.sleep(1.0)
-        
-        response = client.models.generate_content(
-            model='gemini-3.5-flash',
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema=TenderEvaluation,
-                temperature=0.1
-            ),
-        )
-        result_json = json.loads(response.text)
-        return TenderEvaluation(**result_json)
-    except Exception as e:
-        # Print actual error message to GitHub Actions console for debugging
-        print(f"❌ Gemini API Error: {type(e).__name__} - {e}")
-        return TenderEvaluation(
-            relevance_score=0,
-            is_relevant=False,
-            matching_core_domain="Error",
-            brief_reason=f"AI Error: {str(e)[:100]}"
-        )
+    
+    # Retry configuration for temporary 503 (High Demand) or 429 (Rate Limit) errors
+    max_retries = 4
+    base_delay = 5  # Start with 5 seconds delay
+    
+    for attempt in range(max_retries):
+        try:
+            # Try primary model first, fallback to flash-lite if demand is high
+            model_to_use = 'gemini-3.5-flash' if attempt < 2 else 'gemini-3.5-flash-lite'
+            
+            response = client.models.generate_content(
+                model=model_to_use,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=TenderEvaluation,
+                    temperature=0.1
+                ),
+            )
+            result_json = json.loads(response.text)
+            return TenderEvaluation(**result_json)
+
+        except Exception as e:
+            err_msg = str(e)
+            is_transient_error = "503" in err_msg or "UNAVAILABLE" in err_msg or "429" in err_msg
+            
+            if is_transient_error and attempt < max_retries - 1:
+                wait_time = base_delay * (2 ** attempt)  # Exponential wait: 5s, 10s, 20s...
+                print(f"⚠️ Temporary Server/Rate Error ({'503 High Demand' if '503' in err_msg else '429 Rate Limit'}). Retrying in {wait_time}s (Attempt {attempt + 1}/{max_retries})...")
+                time.sleep(wait_time)
+            else:
+                print(f"❌ Gemini API Error: {type(e).__name__} - {e}")
+                break
+
+    return TenderEvaluation(
+        relevance_score=0,
+        is_relevant=False,
+        matching_core_domain="Error",
+        brief_reason="AI evaluation failed due to server high demand after retries."
+    )
 
 
 def process_and_filter_tenders(file_bytes: bytes, output_dir: str, min_score: int = 60) -> str:
