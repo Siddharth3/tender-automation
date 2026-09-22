@@ -93,27 +93,33 @@ def evaluate_tender_row(client: genai.Client, tender_text: str) -> TenderEvaluat
 
 
 def process_and_filter_tenders(file_bytes: bytes, output_dir: str, min_score: int = 60) -> str:
-    """Parses raw downloaded bytes (CSV or Excel), applies AI scoring, and saves filtered Excel."""
+    """Parses raw downloaded bytes, applies AI scoring, and saves filtered Excel."""
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         raise ValueError("Missing GEMINI_API_KEY environment variable.")
 
     client = genai.Client(api_key=api_key)
 
-    # Convert bytes into pandas DataFrame (handles CSV or Excel format gracefully)
+    # 1. Parse TenderDetail file (handles HTML tables, CSVs, and Excel files)
     try:
         df = pd.read_excel(io.BytesIO(file_bytes))
     except Exception:
-        df = pd.read_csv(io.BytesIO(file_bytes))
+        try:
+            # Handle ASP.NET HTML tables disguised as Excel
+            dfs = pd.read_html(io.BytesIO(file_bytes))
+            df = dfs[0] if dfs else pd.DataFrame()
+        except Exception:
+            df = pd.read_csv(io.BytesIO(file_bytes))
 
     if df.empty:
-        print("⚠️ Downloaded tender dataset is empty.")
-        raw_path = os.path.join(output_dir, "empty_export.xlsx")
-        df.to_excel(raw_path, index=False)
-        return raw_path
+        print("⚠️ Raw downloaded file was empty or could not be parsed.")
+        empty_path = os.path.join(output_dir, f"Empty_Export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx")
+        pd.DataFrame({"Status": ["No data found in source file"]}).to_excel(empty_path, index=False)
+        return empty_path
 
-    print(f"🤖 Starting Gemini AI scoring for {len(df)} tenders...")
+    print(f"📊 Successfully loaded {len(df)} raw tenders from export.")
 
+    # 2. Score tenders using Gemini
     scores, is_relevants, domains, reasons = [], [], [], []
 
     for idx, row in df.iterrows():
@@ -126,24 +132,32 @@ def process_and_filter_tenders(file_bytes: bytes, output_dir: str, min_score: in
         domains.append(eval_res.matching_core_domain)
         reasons.append(eval_res.brief_reason)
 
-    # Append evaluation fields
+    # Append AI results
     df["AI_Relevance_Score"] = scores
     df["AI_Is_Relevant"] = is_relevants
     df["AI_Matched_Domain"] = domains
     df["AI_Reasoning"] = reasons
 
-    # Filter by score
-    filtered_df = df[df["AI_Relevance_Score"] >= min_score].sort_values(
-        by="AI_Relevance_Score", ascending=False
+    # Sort all tenders by score descending
+    df = df.sort_values(by="AI_Relevance_Score", ascending=False)
+
+    # 3. Filter by threshold
+    filtered_df = df[df["AI_Relevance_Score"] >= min_score]
+
+    print(f"🎯 Tenders matching score >= {min_score}%: {len(filtered_df)} / {len(df)}")
+
+    # SAFEGUARD: If no tenders cross min_score, return ALL scored tenders so you see what AI evaluated
+    if filtered_df.empty:
+        print(f"⚠️ No tenders met score >= {min_score}%. Returning all scored tenders so email is not empty.")
+        filtered_df = df
+
+    filtered_file_path = os.path.join(
+        output_dir, 
+        f"Chalo_Qualified_Tenders_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
     )
-
-    print(f"🎯 Qualified Tenders Found (Score >= {min_score}%): {len(filtered_df)} / {len(df)}")
-
-    filtered_file_path = os.path.join(output_dir, f"Chalo_Qualified_Tenders_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv")
     filtered_df.to_excel(filtered_file_path, index=False)
 
     return filtered_file_path
-
 
 def send_email_with_attachment(file_path, recipient_email):
     sender_email = os.getenv("SENDER_EMAIL")
