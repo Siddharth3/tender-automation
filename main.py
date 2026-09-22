@@ -71,6 +71,9 @@ def evaluate_tender_row(client: genai.Client, tender_text: str) -> TenderEvaluat
     ---
     """
     try:
+        # Small delay to respect Gemini API rate limits (15 RPM on free tier)
+        time.sleep(1.0)
+        
         response = client.models.generate_content(
             model='gemini-2.5-flash',
             contents=prompt,
@@ -83,12 +86,13 @@ def evaluate_tender_row(client: genai.Client, tender_text: str) -> TenderEvaluat
         result_json = json.loads(response.text)
         return TenderEvaluation(**result_json)
     except Exception as e:
-        print(f"⚠️ Error evaluating row: {e}")
+        # Print actual error message to GitHub Actions console for debugging
+        print(f"❌ Gemini API Error: {type(e).__name__} - {e}")
         return TenderEvaluation(
             relevance_score=0,
             is_relevant=False,
             matching_core_domain="Error",
-            brief_reason="AI evaluation failed."
+            brief_reason=f"AI Error: {str(e)[:100]}"
         )
 
 
