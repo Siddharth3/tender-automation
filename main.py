@@ -44,7 +44,7 @@ Irrelevant Tenders:
 """
 
 INCLUDE_KEYWORDS = [
-    "bus", "transit", "transport", "ticketing", "afcs", "ncmc", "etim", "etm", "itms", "operation", "maintenance", 
+    "bus", "transit", "transport", "ticketing", "afcs", "ncmc", "etim", "etm", "etms", "itms", "operation", "maintenance", 
     "integrated transport management system", "gps", "fleet", "passenger information", "its", "intelligent transport", 
     "electric bus", "electric buses", "e-bus", "fare collection", "mobility", "depot", "vehicle tracking", "avls",
     "vtu", "bms", "bus management system", "cms", "contract management system", "digital audit", "pis", "ncmc", 
