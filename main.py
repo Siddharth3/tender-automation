@@ -23,7 +23,7 @@ Chalo is India’s leading transport technology company.
 
 Core Products & Services:
 - Electric Bus (e-Bus)/ City Bus Deployment, Operation & Maintenance (O&M) / Gross Cost Contract (GCC) services.
-- Electronic Ticket Issuing Machine (‘ETIM’ or 'ETM').
+- Electronic Ticket Issuing Machine (‘ETIM’ or 'ETM' or 'ETMS').
 - Automated Fare Collection System (‘AFCS’).
 - Automated Vehicle Location System (‘AVLS’) and Vehicle Tracking Units (‘VTU’).
 - Cloud Hosting.
