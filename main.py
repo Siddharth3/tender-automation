@@ -276,12 +276,60 @@ async def run_automation():
 
         page = browser_context.pages[0] if browser_context.pages else await browser_context.new_page()
 
-        await page.goto("https://www.tenderdetail.com/Account/Logon", wait_until="domcontentloaded")
-        await page.click("#pill-username")
-        await page.wait_for_timeout(300)
+        # await page.goto("https://www.tenderdetail.com/Account/Logon", wait_until="domcontentloaded")
+        # await page.click("#pill-username")
+        # await page.wait_for_timeout(300)
 
-        await page.fill("#txtLogin", USERNAME)
-        await page.fill("#txtPassword", PASSWORD)
+        # await page.fill("#txtLogin", USERNAME)
+        # await page.fill("#txtPassword", PASSWORD)
+
+        
+        # Open TenderDetail login page
+        await page.goto(
+            "https://www.tenderdetail.com/Account/LogOn",
+            wait_until="domcontentloaded",
+            timeout=60000
+        )
+
+        # Wait for the page to render and inspect the actual login UI
+        await page.wait_for_timeout(2000)
+
+        print("Login URL:", page.url)
+        print("Page title:", await page.title())
+
+        # Save diagnostics in case the website layout has changed
+        await page.screenshot(
+            path="tender_login_debug.png",
+            full_page=True
+        )
+
+        with open("tender_login_debug.html", "w", encoding="utf-8") as f:
+            f.write(await page.content())
+
+        # Inspect available inputs and buttons
+        print("INPUTS:")
+        for element in await page.locator("input").all():
+            print({
+                "id": await element.get_attribute("id"),
+                "name": await element.get_attribute("name"),
+                "type": await element.get_attribute("type"),
+                "placeholder": await element.get_attribute("placeholder")
+            })
+
+        print("BUTTONS:")
+        for element in await page.locator("button, a[role='tab']").all():
+            print({
+                "text": (await element.inner_text()).strip(),
+                "id": await element.get_attribute("id"),
+                "role": await element.get_attribute("role")
+            })
+
+        # Stop here temporarily so you can inspect the login page
+        raise RuntimeError(
+            "Login diagnostics captured. Inspect tender_login_debug.png "
+            "and the input/button details in the Actions log."
+        )
+
         await page.click("#btnLogin")
 
         await page.wait_for_url("https://www.tenderdetail.com/RegisterUser/Dashboard*", timeout=30000)
