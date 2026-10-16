@@ -279,7 +279,7 @@ async def run_automation():
 
         await page.goto("https://www.tenderdetail.com/Account/Logon", wait_until="domcontentloaded")
         await page.click("#pill-username")
-        await page.wait_for_timeout(300)
+        await page.wait_for_timeout(500)
 
         await page.fill("#txtLogin", USERNAME)
         await page.fill("#txtPassword", PASSWORD)
