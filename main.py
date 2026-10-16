@@ -263,6 +263,10 @@ def send_email_with_attachment(file_path, recipient_email):
     print("✅ Email sent successfully!")
 
 async def run_automation():
+    # Verify environment variables exist before running Playwright
+    if not USERNAME or not PASSWORD:
+        raise ValueError("❌ Missing TENDER_USERNAME or TENDER_PASSWORD environment variables. Check GitHub Secrets.")
+
     download_dir = get_dynamic_download_dir(prefix="tender_export")
     profile_dir = os.path.abspath("./tender_chrome_profile")
     os.makedirs(profile_dir, exist_ok=True)
@@ -284,27 +288,28 @@ async def run_automation():
         await page.set_viewport_size({"width": 1280, "height": 800})
 
         print("🌐 Navigating to TenderDetail login page...")
-        # Use domcontentloaded to prevent hanging on continuous background requests
-        await page.goto("https://www.tenderdetail.com/Account/Logon", wait_until="domcontentloaded", timeout=30000)
+        await page.goto("https://www.tenderdetail.com/Account/Logon", wait_until="domcontentloaded", timeout=45000)
 
-        print("🔑 Entering credentials...")
-        # Wait for either #txtLogin or #pill-username, whichever renders first
-        try:
-            await page.wait_for_selector("#txtLogin", state="visible", timeout=10000)
-        except Exception:
-            # Fallback if UI requires pill tab click
-            if await page.locator("#pill-username").is_visible():
-                await page.click("#pill-username")
-                await page.wait_for_selector("#txtLogin", state="visible", timeout=10000)
+        print("🔑 Interacting with login form...")
         
-        await page.fill("#txtLogin", USERNAME)
+        # Click the tab explicitly to activate the username/password fields
+        pill_tab = page.locator("#pill-username")
+        if await pill_tab.is_visible(timeout=5000):
+            await pill_tab.click(force=True)
+            await page.wait_for_timeout(500)
+
+        # Wait specifically for the text box to become attached & visible
+        txt_login = page.locator("#txtLogin")
+        await txt_login.wait_for(state="visible", timeout=30000)
+        
+        await txt_login.fill(USERNAME)
         await page.fill("#txtPassword", PASSWORD)
         await page.click("#btnLogin")
 
         print("⏳ Waiting for dashboard navigation...")
         await page.wait_for_url("https://www.tenderdetail.com/RegisterUser/Dashboard*", timeout=45000)
 
-        # Navigate to inbox and export
+        # Navigate to inbox and trigger export
         await page.locator("a[href*='/registeruser/inbox']").first.click()
         await page.wait_for_load_state("domcontentloaded")
 
