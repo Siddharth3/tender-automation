@@ -35,3 +35,14 @@ jobs:
           RECIPIENT_EMAIL: ${{ secrets.RECIPIENT_EMAIL }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python main.py
+
+ - name: Upload TenderDetail debug files
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tender-login-debug
+          path: |
+            tender_login_debug.png
+            tender_login_debug.html
+          if-no-files-found: warn
+          retention-days: 3
