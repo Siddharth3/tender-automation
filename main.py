@@ -262,7 +262,6 @@ def send_email_with_attachment(file_path, recipient_email):
         server.send_message(msg)
     print("✅ Email sent successfully!")
 
-
 async def run_automation():
     download_dir = get_dynamic_download_dir(prefix="tender_export")
     profile_dir = os.path.abspath("./tender_chrome_profile")
@@ -272,23 +271,35 @@ async def run_automation():
         browser_context = await p.chromium.launch_persistent_context(
             user_data_dir=profile_dir,
             headless=True,
-            args=["--no-sandbox", "--disable-dev-shm-usage"]
+            args=[
+                "--no-sandbox", 
+                "--disable-dev-shm-usage",
+                "--disable-blink-features=AutomationControlled"
+            ]
         )
 
         page = browser_context.pages[0] if browser_context.pages else await browser_context.new_page()
 
-        await page.goto("https://www.tenderdetail.com/Account/Logon", wait_until="domcontentloaded")
-        await page.click("#pill-username")
-        await page.wait_for_timeout(500)
+        # Set standard desktop viewport to ensure layout doesn't hide elements
+        await page.set_viewport_size({"width": 1280, "height": 800})
 
+        print("🌐 Navigating to TenderDetail login page...")
+        await page.goto("https://www.tenderdetail.com/Account/Logon", wait_until="networkidle", timeout=60000)
+
+        # Wait directly for username input field instead of clicking UI tab
+        print("🔑 Entering credentials...")
+        await page.wait_for_selector("#txtLogin", state="visible", timeout=30000)
+        
         await page.fill("#txtLogin", USERNAME)
         await page.fill("#txtPassword", PASSWORD)
         await page.click("#btnLogin")
 
-        await page.wait_for_url("https://www.tenderdetail.com/RegisterUser/Dashboard*", timeout=30000)
+        print("⏳ Waiting for dashboard navigation...")
+        await page.wait_for_url("https://www.tenderdetail.com/RegisterUser/Dashboard*", timeout=45000)
 
+        # Navigate to inbox and export
         await page.locator("a[href*='/registeruser/inbox']").first.click()
-        await page.wait_for_load_state("domcontentloaded")
+        await page.wait_for_load_state("networkidle")
 
         download_element = page.locator("a[href*='/registeruser/exportxslttoexcel']").first
         relative_url = await download_element.get_attribute("href")
@@ -302,7 +313,6 @@ async def run_automation():
         # Pass downloaded bytes to AI processing engine
         final_file_path = process_and_filter_tenders(file_bytes, download_dir, min_score=60)
         return final_file_path
-
 
 if __name__ == "__main__":
     file_path = asyncio.run(run_automation())
