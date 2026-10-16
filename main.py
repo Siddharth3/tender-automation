@@ -280,15 +280,22 @@ async def run_automation():
 
         page = browser_context.pages[0] if browser_context.pages else await browser_context.new_page()
 
-        # Set standard desktop viewport to ensure layout doesn't hide elements
+        # Set desktop viewport size
         await page.set_viewport_size({"width": 1280, "height": 800})
 
         print("🌐 Navigating to TenderDetail login page...")
-        await page.goto("https://www.tenderdetail.com/Account/Logon", wait_until="networkidle", timeout=60000)
+        # Use domcontentloaded to prevent hanging on continuous background requests
+        await page.goto("https://www.tenderdetail.com/Account/Logon", wait_until="domcontentloaded", timeout=30000)
 
-        # Wait directly for username input field instead of clicking UI tab
         print("🔑 Entering credentials...")
-        await page.wait_for_selector("#txtLogin", state="visible", timeout=30000)
+        # Wait for either #txtLogin or #pill-username, whichever renders first
+        try:
+            await page.wait_for_selector("#txtLogin", state="visible", timeout=10000)
+        except Exception:
+            # Fallback if UI requires pill tab click
+            if await page.locator("#pill-username").is_visible():
+                await page.click("#pill-username")
+                await page.wait_for_selector("#txtLogin", state="visible", timeout=10000)
         
         await page.fill("#txtLogin", USERNAME)
         await page.fill("#txtPassword", PASSWORD)
@@ -299,7 +306,7 @@ async def run_automation():
 
         # Navigate to inbox and export
         await page.locator("a[href*='/registeruser/inbox']").first.click()
-        await page.wait_for_load_state("networkidle")
+        await page.wait_for_load_state("domcontentloaded")
 
         download_element = page.locator("a[href*='/registeruser/exportxslttoexcel']").first
         relative_url = await download_element.get_attribute("href")
