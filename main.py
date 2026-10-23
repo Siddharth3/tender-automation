@@ -5,13 +5,13 @@ import json
 import asyncio
 import smtplib
 import pandas as pd
+import playwright_stealth
 from datetime import datetime
 from email.message import EmailMessage
 from pydantic import BaseModel, Field
 from playwright.async_api import async_playwright
 from google import genai
 from google.genai import types
-from playwright_stealth import stealth_async
 
 # Environment Variables
 USERNAME = os.getenv("TENDER_USERNAME")
@@ -272,7 +272,6 @@ async def run_automation():
     os.makedirs(profile_dir, exist_ok=True)
 
     async with async_playwright() as p:
-        # Launch Chromium with stealth flags
         browser = await p.chromium.launch(
             headless=True,
             args=[
@@ -283,7 +282,6 @@ async def run_automation():
             ]
         )
         
-        # Pass realistic desktop User-Agent and Viewport
         context = await browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
             viewport={"width": 1280, "height": 800},
@@ -292,13 +290,13 @@ async def run_automation():
 
         page = await context.new_page()
         
-        # Apply stealth patches to bypass Cloudflare / Bot detection
-        await stealth_async(page)
+        # Apply stealth asynchronously
+        await playwright_stealth.stealth_async(page)
 
         print("🌐 Navigating to TenderDetail login page...")
         await page.goto("https://www.tenderdetail.com/Account/Logon", wait_until="domcontentloaded", timeout=45000)
 
-        # Wait up to 10s in case Cloudflare challenge takes a moment to pass
+        # Allow Cloudflare / anti-bot challenge to pass
         await page.wait_for_timeout(3000)
 
         print("🔑 Interacting with login form...")
