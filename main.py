@@ -263,8 +263,6 @@ def send_email_with_attachment(file_path, recipient_email):
         server.send_message(msg)
     print("✅ Email sent successfully!")
 
-from playwright_stealth import stealth_async
-
 async def run_automation():
     if not USERNAME or not PASSWORD:
         raise ValueError("❌ Missing TENDER_USERNAME or TENDER_PASSWORD environment variables. Check GitHub Secrets.")
