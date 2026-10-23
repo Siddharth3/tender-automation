@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from playwright.async_api import async_playwright
 from google import genai
 from google.genai import types
+from playwright_stealth import stealth_async
 
 # Environment Variables
 USERNAME = os.getenv("TENDER_USERNAME")
@@ -262,55 +263,63 @@ def send_email_with_attachment(file_path, recipient_email):
         server.send_message(msg)
     print("✅ Email sent successfully!")
 
+from playwright_stealth import stealth_async
+
 async def run_automation():
+    if not USERNAME or not PASSWORD:
+        raise ValueError("❌ Missing TENDER_USERNAME or TENDER_PASSWORD environment variables. Check GitHub Secrets.")
+
     download_dir = get_dynamic_download_dir(prefix="tender_export")
     profile_dir = os.path.abspath("./tender_chrome_profile")
     os.makedirs(profile_dir, exist_ok=True)
 
     async with async_playwright() as p:
-        browser_context = await p.chromium.launch_persistent_context(
-            user_data_dir=profile_dir,
+        # Launch Chromium with stealth flags
+        browser = await p.chromium.launch(
             headless=True,
-            args=["--no-sandbox", "--disable-dev-shm-usage"]
+            args=[
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-blink-features=AutomationControlled",
+                "--disable-features=IsolateOrigins,site-per-process",
+            ]
+        )
+        
+        # Pass realistic desktop User-Agent and Viewport
+        context = await browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            viewport={"width": 1280, "height": 800},
+            locale="en-US"
         )
 
-        page = browser_context.pages[0] if browser_context.pages else await browser_context.new_page()
+        page = await context.new_page()
+        
+        # Apply stealth patches to bypass Cloudflare / Bot detection
+        await stealth_async(page)
 
-        # await page.goto("https://www.tenderdetail.com/Account/Logon", wait_until="domcontentloaded")
-        # await page.click("#pill-username")
-        # await page.wait_for_timeout(300)
-        await page.goto(
-    "https://www.tenderdetail.com/Account/LogOn",
-    wait_until="domcontentloaded",
-    timeout=60000
-)
+        print("🌐 Navigating to TenderDetail login page...")
+        await page.goto("https://www.tenderdetail.com/Account/Logon", wait_until="domcontentloaded", timeout=45000)
 
-await page.wait_for_timeout(2000)
+        # Wait up to 10s in case Cloudflare challenge takes a moment to pass
+        await page.wait_for_timeout(3000)
 
-title = await page.title()
-html = await page.content()
+        print("🔑 Interacting with login form...")
+        pill_tab = page.locator("#pill-username")
+        if await pill_tab.is_visible(timeout=5000):
+            await pill_tab.click(force=True)
+            await page.wait_for_timeout(500)
 
-if (
-    "just a moment" in title.lower()
-    or "cf-turnstile" in html.lower()
-    or "cf-chl-" in html.lower()
-):
-    raise RuntimeError(
-        "TenderDetail is presenting a Cloudflare security "
-        "challenge instead of the login page. "
-        "Automated login cannot continue. "
-        "Use an approved access method or investigate "
-        "the challenge through TenderDetail support."
-    )
-
-# Continue with the verified login selectors here.
-        # await page.fill("#txtLogin", USERNAME)
-        # await page.fill("#txtPassword", PASSWORD)
-
+        txt_login = page.locator("#txtLogin")
+        await txt_login.wait_for(state="visible", timeout=30000)
+        
+        await txt_login.fill(USERNAME)
+        await page.fill("#txtPassword", PASSWORD)
         await page.click("#btnLogin")
 
-        await page.wait_for_url("https://www.tenderdetail.com/RegisterUser/Dashboard*", timeout=30000)
+        print("⏳ Waiting for dashboard navigation...")
+        await page.wait_for_url("https://www.tenderdetail.com/RegisterUser/Dashboard*", timeout=45000)
 
+        # Navigate to inbox and trigger export
         await page.locator("a[href*='/registeruser/inbox']").first.click()
         await page.wait_for_load_state("domcontentloaded")
 
@@ -321,7 +330,7 @@ if (
         response = await page.request.get(full_download_url)
         file_bytes = await response.body()
 
-        await browser_context.close()
+        await browser.close()
 
         # Pass downloaded bytes to AI processing engine
         final_file_path = process_and_filter_tenders(file_bytes, download_dir, min_score=60)
