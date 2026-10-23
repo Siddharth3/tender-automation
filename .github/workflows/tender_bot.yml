@@ -1,11 +1,11 @@
 name: Tender Email Bot
 
-#on:
-  #schedule:
+on:
+  schedule:
     # Runs daily at 5:17 AM UTC (10:47 AM IST)
-    # - cron: '17 5 * * *'
+     - cron: '17 5 * * *'
   # Allows manual triggering from the GitHub Actions UI
-  #workflow_dispatch:
+  workflow_dispatch:
 
 jobs:
   run-automation:
