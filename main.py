@@ -5,13 +5,13 @@ import json
 import asyncio
 import smtplib
 import pandas as pd
-import playwright_stealth
 from datetime import datetime
 from email.message import EmailMessage
 from pydantic import BaseModel, Field
 from playwright.async_api import async_playwright
 from google import genai
 from google.genai import types
+from playwright_stealth import stealth_async
 
 # Environment Variables
 USERNAME = os.getenv("TENDER_USERNAME")
@@ -290,8 +290,8 @@ async def run_automation():
 
         page = await context.new_page()
         
-        # Apply stealth asynchronously
-        await playwright_stealth.stealth_async(page)
+        # Apply stealth asynchronously directly
+        await stealth_async(page)
 
         print("🌐 Navigating to TenderDetail login page...")
         await page.goto("https://www.tenderdetail.com/Account/Logon", wait_until="domcontentloaded", timeout=45000)
