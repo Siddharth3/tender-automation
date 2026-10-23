@@ -11,7 +11,6 @@ from pydantic import BaseModel, Field
 from playwright.async_api import async_playwright
 from google import genai
 from google.genai import types
-from playwright_stealth import stealth_async
 
 # Environment Variables
 USERNAME = os.getenv("TENDER_USERNAME")
@@ -272,6 +271,7 @@ async def run_automation():
     os.makedirs(profile_dir, exist_ok=True)
 
     async with async_playwright() as p:
+        # Launch Chromium with anti-bot evasion arguments
         browser = await p.chromium.launch(
             headless=True,
             args=[
@@ -282,6 +282,7 @@ async def run_automation():
             ]
         )
         
+        # Configure context with real browser properties
         context = await browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
             viewport={"width": 1280, "height": 800},
@@ -289,17 +290,23 @@ async def run_automation():
         )
 
         page = await context.new_page()
-        
-        # Apply stealth asynchronously directly
-        await stealth_async(page)
+
+        # Native anti-detection script injection (bypasses navigator.webdriver checks)
+        await page.add_init_script("""
+            Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+            Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
+            Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
+            window.chrome = { runtime: {} };
+        """)
 
         print("🌐 Navigating to TenderDetail login page...")
         await page.goto("https://www.tenderdetail.com/Account/Logon", wait_until="domcontentloaded", timeout=45000)
 
-        # Allow Cloudflare / anti-bot challenge to pass
+        # Pause briefly to allow Cloudflare challenge to pass
         await page.wait_for_timeout(3000)
 
         print("🔑 Interacting with login form...")
+        
         pill_tab = page.locator("#pill-username")
         if await pill_tab.is_visible(timeout=5000):
             await pill_tab.click(force=True)
@@ -315,7 +322,7 @@ async def run_automation():
         print("⏳ Waiting for dashboard navigation...")
         await page.wait_for_url("https://www.tenderdetail.com/RegisterUser/Dashboard*", timeout=45000)
 
-        # Navigate to inbox and trigger export
+        # Navigate to inbox and fetch download link
         await page.locator("a[href*='/registeruser/inbox']").first.click()
         await page.wait_for_load_state("domcontentloaded")
 
