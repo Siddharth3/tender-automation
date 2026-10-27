@@ -195,8 +195,8 @@ def process_and_filter_tenders(file_bytes: bytes, output_dir: str, min_score: in
         
         print(f"   🤖 AI Evaluating TDR {tdr} ({len(eval_map) + 1}/{len(pre_filtered_df)})...")
         
-        # 13-second sleep ensures we strictly respect 5 RPM (free tier limit)
-        time.sleep(13)
+        # 16-second sleep ensures we strictly respect 5 RPM (free tier limit)
+        time.sleep(16)
         eval_res = evaluate_tender_row(client, tender_summary)
         eval_map[tdr] = eval_res
 
